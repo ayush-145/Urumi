@@ -115,11 +115,12 @@ store:
                 console.log(`[${name}] Waiting for pod to be running...`);
                 // Simple poll for pod name
                 let podName = '';
-                for (let i = 0; i < 120; i++) { // Increase timeout to 10 minutes (120 * 5s)
+                for (let i = 0; i < 120; i++) { // 10 minutes (120 * 5s)
                     try {
-                        const pods = await k8sApi.listNamespacedPod(namespace);
-                        const pod = pods.body.items.find(p => {
-                            const labels = p.metadata.labels;
+                        const output = await runCommand(`kubectl get pods -n ${namespace} -o json`);
+                        const podsData = JSON.parse(output);
+                        const pod = podsData.items.find(p => {
+                            const labels = p.metadata.labels || {};
                             return (labels['app.kubernetes.io/name'] === 'wordpress' || labels['app.kubernetes.io/name'] === 'store')
                                 && p.status.phase === 'Running';
                         });
@@ -129,8 +130,9 @@ store:
                             break;
                         }
                     } catch (e) {
-                        console.log(`[${name}] Waiting for pod... (Attempt ${i + 1}/120)`);
+                        // kubectl or parse failed, retry
                     }
+                    console.log(`[${name}] Waiting for pod... (Attempt ${i + 1}/120)`);
                     await new Promise(r => setTimeout(r, 5000));
                 }
 
@@ -143,6 +145,10 @@ store:
                     // Exec script
                     await runCommand(`kubectl exec -n ${namespace} ${podName} -- /bin/bash /tmp/setup-woo.sh`);
                     console.log(`[${name}] WooCommerce setup complete!`);
+
+                    // LABEL POD AS READY
+                    console.log(`[${name}] Labeling pod as ready...`);
+                    await runCommand(`kubectl label pod ${podName} -n ${namespace} urumi.io/store-status=ready --overwrite`);
                 } else {
                     console.error(`[${name}] Timed out waiting for pod.`);
                 }
@@ -166,13 +172,13 @@ store:
 // 2. LIST STORES (GET /api/stores)
 app.get('/api/stores', async (req, res) => {
     try {
-        // 1. Get all Namespaces
-        const namespacesRes = await k8sApi.listNamespace();
-        const nsItems = namespacesRes.items || (namespacesRes.body ? namespacesRes.body.items : []);
+        // 1. Get all Namespaces via kubectl
+        const nsOutput = await runCommand('kubectl get namespaces -o json');
+        const nsItems = JSON.parse(nsOutput).items;
 
-        // 2. Get ALL Pods in the cluster (Faster: 1 call vs N calls)
-        const podsRes = await k8sApi.listPodForAllNamespaces();
-        const allPods = podsRes.items || (podsRes.body ? podsRes.body.items : []);
+        // 2. Get ALL Pods in the cluster via kubectl
+        const podsOutput = await runCommand('kubectl get pods -A -o json');
+        const allPods = JSON.parse(podsOutput).items;
 
         // 3. Filter for our stores
         const ignoredNamespaces = ['default', 'kube-system', 'kube-public', 'kube-node-lease', 'local-path-storage', 'ingress-nginx'];
@@ -186,15 +192,16 @@ app.get('/api/stores', async (req, res) => {
                 const nsPods = allPods.filter(pod => pod.metadata.namespace === nsName);
 
                 // Determine Status
-                let status = 'Ready';
+                let status = 'Provisioning'; // Default to Provisioning
                 if (nsPods.length === 0) status = 'Empty';
 
-                const notReady = nsPods.some(pod => {
+                const readyPod = nsPods.find(pod => {
                     const phase = pod.status.phase;
-                    return phase !== 'Running' && phase !== 'Succeeded';
+                    const labels = pod.metadata.labels || {};
+                    return phase === 'Running' && labels['urumi.io/store-status'] === 'ready';
                 });
 
-                if (notReady) status = 'Provisioning';
+                if (readyPod) status = 'Ready';
 
                 return {
                     name: nsName,

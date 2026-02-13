@@ -25,10 +25,10 @@ wp wc product create --name="Stylish Hat" --type=simple --regular_price=15 --des
 
 echo "Configuring Homepage..."
 
-# Retry loop to find the Shop page
+# Get the Shop page ID from WooCommerce's own setting (most reliable)
 for i in {1..5}; do
-    SHOP_PAGE_ID=$(wp post list --post_type=page --post_title=Shop --format=ids --posts_per_page=1 --allow-root)
-    if [ ! -z "$SHOP_PAGE_ID" ]; then
+    SHOP_PAGE_ID=$(wp option get woocommerce_shop_page_id --allow-root 2>/dev/null)
+    if [ ! -z "$SHOP_PAGE_ID" ] && [ "$SHOP_PAGE_ID" != "0" ]; then
         echo "Found Shop Page ID: '$SHOP_PAGE_ID'"
         break
     else
@@ -70,7 +70,16 @@ wp option update woocommerce_cod_settings '{"enabled":"yes"}' --format=json --al
 
 # Disable Setup Wizard
 echo "Disabling Setup Wizard..."
-wp option set woocommerce_task_list_hidden yes --allow-root
+wp option update woocommerce_task_list_hidden 'yes' --allow-root || true
+
+# Enable User Registration / Sign Up
+echo "Enabling user registration..."
+wp option update users_can_register 1 --allow-root
+wp option update default_role 'customer' --allow-root
+wp option update woocommerce_enable_myaccount_registration 'yes' --allow-root
+wp option update woocommerce_enable_signup_and_login_from_checkout 'yes' --allow-root
+wp option update woocommerce_registration_generate_username 'yes' --allow-root
+wp option update woocommerce_registration_generate_password 'no' --allow-root
 
 # Flush Permalinks (Essential for Checkout page to work)
 echo "Flushing permalinks..."
