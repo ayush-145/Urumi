@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import CreateStoreModal from './components/CreateStoreModal'
 import StoreList from './components/StoreList'
 import Login from './pages/Login';
 
-const Dashboard = () => {
+const Dashboard = ({ onLogout }) => {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const navigate = useNavigate();
@@ -12,6 +12,7 @@ const Dashboard = () => {
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    onLogout();
     navigate('/login');
   }
 
@@ -70,14 +71,21 @@ const Dashboard = () => {
 }
 
 function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
+
+  const handleLogin = useCallback(() => setIsLoggedIn(true), []);
+  const handleLogout = useCallback(() => setIsLoggedIn(false), []);
+
   return (
     <Router>
       <Routes>
-        <Route path="/login" element={<Login />} />
+        <Route path="/login" element={
+          isLoggedIn ? <Navigate to="/" /> : <Login onLogin={handleLogin} />
+        } />
         <Route
           path="/"
           element={
-            localStorage.getItem('token') ? <Dashboard /> : <Navigate to="/login" />
+            isLoggedIn ? <Dashboard onLogout={handleLogout} /> : <Navigate to="/login" />
           }
         />
       </Routes>
@@ -86,3 +94,4 @@ function App() {
 }
 
 export default App
+
