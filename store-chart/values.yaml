@@ -1,0 +1,43 @@
+# Global overrides for the 'store' dependency (WordPress)
+store:
+  # Force WordPress to use latest
+  image:
+    tag: latest
+
+  # Disable LoadBalancer
+  service:
+    type: ClusterIP
+
+  # Ingress Configuration
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostname: localhost
+    path: /
+    pathType: Prefix
+    annotations:
+      nginx.ingress.kubernetes.io/rewrite-target: /
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+
+  # Resource Limits
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+
+  # Database Configuration
+  mariadb:
+    image:
+      tag: latest
+    architecture: standalone
+    primary:
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+
+  # FIX: Force the Helper Image to use latest too
+  volumePermissions:
+    enabled: true
+    image:
+      tag: latest
